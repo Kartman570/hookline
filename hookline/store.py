@@ -54,3 +54,35 @@ class Store:
         with self.connection() as db:
             row = db.execute('SELECT * FROM endpoints WHERE id=?', (endpoint_id,)).fetchone()
             return dict(row) if row else None
+
+    def enqueue(self, endpoint_id, key, payload, max_attempts=5):
+        import json
+        import uuid
+        if not key or len(key) > 200 or not 1 <= max_attempts <= 20:
+            raise ValueError('Invalid idempotency key or attempt limit')
+        body = json.dumps(payload, sort_keys=True, separators=(',', ':'), allow_nan=False)
+        if len(body.encode()) > 65536:
+            raise ValueError('Payload exceeds 64 KiB')
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            endpoint = db.execute('SELECT * FROM endpoints WHERE id=?', (endpoint_id,)).fetchone()
+            if not endpoint or not endpoint['enabled']:
+                raise ValueError('Endpoint is missing or disabled')
+            existing = db.execute('SELECT * FROM events WHERE endpoint_id=? AND dedupe_key=?',
+                                  (endpoint_id, key)).fetchone()
+            if existing:
+                if existing['payload'] != body:
+                    raise ValueError('Idempotency key already has a different payload')
+                db.commit()
+                return dict(existing), False
+            event_id = uuid.uuid4().hex
+            db.execute("""INSERT INTO events(id, endpoint_id, dedupe_key, payload, max_attempts)
+                VALUES (?, ?, ?, ?, ?)""", (event_id, endpoint_id, key, body, max_attempts))
+            result = dict(db.execute('SELECT * FROM events WHERE id=?', (event_id,)).fetchone())
+            db.commit()
+            return result, True
+
+    def event(self, event_id):
+        with self.connection() as db:
+            row = db.execute('SELECT * FROM events WHERE id=?', (event_id,)).fetchone()
+            return dict(row) if row else None
