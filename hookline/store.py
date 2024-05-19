@@ -38,3 +38,19 @@ class Store:
             yield db
         finally:
             db.close()
+
+    def add_endpoint(self, name, url, secret):
+        with self.connection() as db:
+            cursor = db.execute('INSERT INTO endpoints(name, url, secret) VALUES (?, ?, ?)',
+                                (name, url, secret))
+            return cursor.lastrowid
+
+    def endpoints(self):
+        with self.connection() as db:
+            return [dict(row) for row in db.execute(
+                'SELECT id, name, url, enabled FROM endpoints ORDER BY id')]
+
+    def endpoint(self, endpoint_id):
+        with self.connection() as db:
+            row = db.execute('SELECT * FROM endpoints WHERE id=?', (endpoint_id,)).fetchone()
+            return dict(row) if row else None
