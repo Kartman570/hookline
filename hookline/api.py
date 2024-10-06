@@ -11,6 +11,13 @@ class EndpointInput(BaseModel):
     secret: str = Field(min_length=16, max_length=256)
 
 
+class EventInput(BaseModel):
+    endpoint_id: int = Field(gt=0)
+    key: str = Field(min_length=1, max_length=200)
+    payload: dict
+    max_attempts: int = Field(default=5, ge=1, le=20)
+
+
 def create_app(settings=None):
     settings = settings or from_env()
     store = Store(settings.database)
@@ -37,5 +44,21 @@ def create_app(settings=None):
     @app.get('/endpoints', dependencies=[Depends(authorize)])
     def endpoints():
         return store.endpoints()
+
+    @app.post('/events', dependencies=[Depends(authorize)], status_code=202)
+    def enqueue(body: EventInput):
+        try:
+            event, created = store.enqueue(body.endpoint_id, body.key, body.payload,
+                                           body.max_attempts)
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
+        return {'id': event['id'], 'state': event['state'], 'created': created}
+
+    @app.get('/events/{event_id}', dependencies=[Depends(authorize)])
+    def event(event_id: str):
+        result = store.event(event_id)
+        if result is None:
+            raise HTTPException(404, 'Event not found')
+        return result
 
     return app
