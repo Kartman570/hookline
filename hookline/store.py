@@ -114,3 +114,31 @@ class Store:
             result = dict(db.execute('SELECT * FROM events WHERE id=?', (event['id'],)).fetchone())
             db.commit()
             return result
+
+    def finish(self, event_id, token, status_code, error, now, delay):
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            event = db.execute("SELECT * FROM events WHERE id=? AND state='processing' "
+                               'AND lease_token=?', (event_id, token)).fetchone()
+            if not event:
+                db.commit()
+                return False
+            if status_code is not None and 200 <= status_code < 300:
+                state = 'delivered'
+            elif (status_code is None or status_code in {408, 429} or status_code >= 500) and (
+                    event['attempts'] < event['max_attempts']):
+                state = 'pending'
+            else:
+                state = 'dead'
+            db.execute('UPDATE attempts SET result=?, status_code=?, error=? WHERE token=?',
+                       (state, status_code, error, token))
+            db.execute("""UPDATE events SET state=?, next_at=?, lease_until=NULL, lease_token=NULL
+                WHERE id=?""", (state, now + delay, event_id))
+            db.commit()
+            return True
+
+    def attempts(self, event_id):
+        with self.connection() as db:
+            return [dict(row) for row in db.execute(
+                'SELECT number, result, status_code, error FROM attempts WHERE event_id=? '
+                'ORDER BY number', (event_id,))]
