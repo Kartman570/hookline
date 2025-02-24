@@ -86,3 +86,59 @@ class Store:
         with self.connection() as db:
             row = db.execute('SELECT * FROM events WHERE id=?', (event_id,)).fetchone()
             return dict(row) if row else None
+
+    def claim(self, now, lease_seconds):
+        import uuid
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            expired = db.execute("SELECT * FROM events WHERE state='processing' AND lease_until<=?",
+                                 (now,)).fetchall()
+            for event in expired:
+                db.execute("UPDATE attempts SET result='expired', error='LeaseExpired' WHERE token=?",
+                           (event['lease_token'],))
+                state = 'dead' if event['attempts'] >= event['max_attempts'] else 'pending'
+                db.execute("""UPDATE events SET state=?, lease_token=NULL, lease_until=NULL,
+                           next_at=? WHERE id=?""", (state, now, event['id']))
+            event = db.execute("""SELECT e.* FROM events e JOIN endpoints p ON p.id=e.endpoint_id
+                WHERE e.state='pending' AND e.next_at<=? AND p.enabled=1
+                ORDER BY e.next_at, e.rowid LIMIT 1""", (now,)).fetchone()
+            if not event:
+                db.commit()
+                return None
+            token = uuid.uuid4().hex
+            number = event['attempts'] + 1
+            db.execute("""UPDATE events SET state='processing', attempts=?, lease_until=?,
+                lease_token=? WHERE id=?""", (number, now + lease_seconds, token, event['id']))
+            db.execute('INSERT INTO attempts(event_id, number, token, result) VALUES (?, ?, ?, ?)',
+                       (event['id'], number, token, 'processing'))
+            result = dict(db.execute('SELECT * FROM events WHERE id=?', (event['id'],)).fetchone())
+            db.commit()
+            return result
+
+    def finish(self, event_id, token, status_code, error, now, delay):
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            event = db.execute("SELECT * FROM events WHERE id=? AND state='processing' "
+                               'AND lease_token=?', (event_id, token)).fetchone()
+            if not event:
+                db.commit()
+                return False
+            if status_code is not None and 200 <= status_code < 300:
+                state = 'delivered'
+            elif (status_code is None or status_code in {408, 429} or status_code >= 500) and (
+                    event['attempts'] < event['max_attempts']):
+                state = 'pending'
+            else:
+                state = 'dead'
+            db.execute('UPDATE attempts SET result=?, status_code=?, error=? WHERE token=?',
+                       (state, status_code, error, token))
+            db.execute("""UPDATE events SET state=?, next_at=?, lease_until=NULL, lease_token=NULL
+                WHERE id=?""", (state, now + delay, event_id))
+            db.commit()
+            return True
+
+    def attempts(self, event_id):
+        with self.connection() as db:
+            return [dict(row) for row in db.execute(
+                'SELECT number, result, status_code, error FROM attempts WHERE event_id=? '
+                'ORDER BY number', (event_id,))]
