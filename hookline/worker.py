@@ -12,8 +12,8 @@ def backoff(attempt):
 
 
 def tick(store, settings, now=None):
-    now = time.time() if now is None else now
-    event = store.claim(now, settings.lease_seconds)
+    claim_time = time.time() if now is None else now
+    event = store.claim(claim_time, settings.lease_seconds)
     if event is None:
         return False
     endpoint = store.endpoint(event['endpoint_id'])
