@@ -152,3 +152,17 @@ class Store:
                 (extra_attempts, event_id))
             if not cursor.rowcount:
                 raise ValueError('Only dead events can be replayed')
+
+    def events(self, state=None, limit=50, offset=0):
+        if state not in {None, 'pending', 'processing', 'delivered', 'dead'}:
+            raise ValueError('Unknown event state')
+        if not 1 <= limit <= 200 or offset < 0:
+            raise ValueError('Invalid page bounds')
+        with self.connection() as db:
+            query = 'SELECT id, endpoint_id, state, attempts, max_attempts FROM events'
+            values = []
+            if state:
+                query += ' WHERE state=?'
+                values.append(state)
+            query += ' ORDER BY rowid DESC LIMIT ? OFFSET ?'
+            return [dict(row) for row in db.execute(query, values + [limit, offset])]

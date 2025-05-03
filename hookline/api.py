@@ -75,4 +75,11 @@ def create_app(settings=None):
             raise HTTPException(404, 'Event not found')
         return store.attempts(event_id)
 
+    @app.get('/events', dependencies=[Depends(authorize)])
+    def events(state: str = None, limit: int = 50, offset: int = 0):
+        try:
+            return store.events(state, limit, offset)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+
     return app
