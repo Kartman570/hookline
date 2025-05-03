@@ -142,3 +142,13 @@ class Store:
             return [dict(row) for row in db.execute(
                 'SELECT number, result, status_code, error FROM attempts WHERE event_id=? '
                 'ORDER BY number', (event_id,))]
+
+    def replay(self, event_id, extra_attempts=5):
+        if not 1 <= extra_attempts <= 20:
+            raise ValueError('Extra attempts must be between 1 and 20')
+        with self.connection() as db:
+            cursor = db.execute("""UPDATE events SET state='pending', next_at=0,
+                max_attempts=attempts+? WHERE id=? AND state='dead' """,
+                (extra_attempts, event_id))
+            if not cursor.rowcount:
+                raise ValueError('Only dead events can be replayed')
