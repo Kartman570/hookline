@@ -61,4 +61,33 @@ def create_app(settings=None):
             raise HTTPException(404, 'Event not found')
         return result
 
+    @app.post('/events/{event_id}/replay', dependencies=[Depends(authorize)])
+    def replay(event_id: str):
+        try:
+            store.replay(event_id)
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
+        return {'id': event_id, 'state': 'pending'}
+
+    @app.get('/events/{event_id}/attempts', dependencies=[Depends(authorize)])
+    def attempts(event_id: str):
+        if store.event(event_id) is None:
+            raise HTTPException(404, 'Event not found')
+        return store.attempts(event_id)
+
+    @app.get('/events', dependencies=[Depends(authorize)])
+    def events(state: str = None, limit: int = 50, offset: int = 0):
+        try:
+            return store.events(state, limit, offset)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+
+    @app.patch('/endpoints/{endpoint_id}', dependencies=[Depends(authorize)])
+    def enable(endpoint_id: int, enabled: bool):
+        try:
+            store.set_enabled(endpoint_id, enabled)
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from error
+        return {'id': endpoint_id, 'enabled': enabled}
+
     return app

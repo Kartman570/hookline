@@ -142,3 +142,34 @@ class Store:
             return [dict(row) for row in db.execute(
                 'SELECT number, result, status_code, error FROM attempts WHERE event_id=? '
                 'ORDER BY number', (event_id,))]
+
+    def replay(self, event_id, extra_attempts=5):
+        if not 1 <= extra_attempts <= 20:
+            raise ValueError('Extra attempts must be between 1 and 20')
+        with self.connection() as db:
+            cursor = db.execute("""UPDATE events SET state='pending', next_at=0,
+                max_attempts=attempts+? WHERE id=? AND state='dead' """,
+                (extra_attempts, event_id))
+            if not cursor.rowcount:
+                raise ValueError('Only dead events can be replayed')
+
+    def events(self, state=None, limit=50, offset=0):
+        if state not in {None, 'pending', 'processing', 'delivered', 'dead'}:
+            raise ValueError('Unknown event state')
+        if not 1 <= limit <= 200 or offset < 0:
+            raise ValueError('Invalid page bounds')
+        with self.connection() as db:
+            query = 'SELECT id, endpoint_id, state, attempts, max_attempts FROM events'
+            values = []
+            if state:
+                query += ' WHERE state=?'
+                values.append(state)
+            query += ' ORDER BY rowid DESC LIMIT ? OFFSET ?'
+            return [dict(row) for row in db.execute(query, values + [limit, offset])]
+
+    def set_enabled(self, endpoint_id, enabled):
+        with self.connection() as db:
+            cursor = db.execute('UPDATE endpoints SET enabled=? WHERE id=?',
+                                (int(enabled), endpoint_id))
+            if not cursor.rowcount:
+                raise ValueError('Endpoint not found')
