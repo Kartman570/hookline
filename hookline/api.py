@@ -82,4 +82,12 @@ def create_app(settings=None):
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
 
+    @app.patch('/endpoints/{endpoint_id}', dependencies=[Depends(authorize)])
+    def enable(endpoint_id: int, enabled: bool):
+        try:
+            store.set_enabled(endpoint_id, enabled)
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from error
+        return {'id': endpoint_id, 'enabled': enabled}
+
     return app

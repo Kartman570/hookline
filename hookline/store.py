@@ -166,3 +166,10 @@ class Store:
                 values.append(state)
             query += ' ORDER BY rowid DESC LIMIT ? OFFSET ?'
             return [dict(row) for row in db.execute(query, values + [limit, offset])]
+
+    def set_enabled(self, endpoint_id, enabled):
+        with self.connection() as db:
+            cursor = db.execute('UPDATE endpoints SET enabled=? WHERE id=?',
+                                (int(enabled), endpoint_id))
+            if not cursor.rowcount:
+                raise ValueError('Endpoint not found')
