@@ -90,4 +90,8 @@ def create_app(settings=None):
             raise HTTPException(404, str(error)) from error
         return {'id': endpoint_id, 'enabled': enabled}
 
+    @app.get('/stats', dependencies=[Depends(authorize)])
+    def stats():
+        return store.stats()
+
     return app

@@ -173,3 +173,11 @@ class Store:
                                 (int(enabled), endpoint_id))
             if not cursor.rowcount:
                 raise ValueError('Endpoint not found')
+
+    def stats(self):
+        result = dict.fromkeys(['pending', 'processing', 'delivered', 'dead'], 0)
+        with self.connection() as db:
+            for row in db.execute('SELECT state, COUNT(*) AS count FROM events GROUP BY state'):
+                result[row['state']] = row['count']
+            result['attempts'] = db.execute('SELECT COUNT(*) FROM attempts').fetchone()[0]
+        return result
