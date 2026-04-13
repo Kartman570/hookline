@@ -25,7 +25,7 @@ def create_app(settings=None):
     app.state.store = store
 
     def authorize(authorization: str = Header(default='')):
-        if not secrets.compare_digest(authorization, 'Bearer ' + settings.api_key):
+        if not secrets.compare_digest(authorization.encode(), ('Bearer ' + settings.api_key).encode()):
             raise HTTPException(401, 'Invalid access token')
 
     @app.get('/health')

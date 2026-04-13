@@ -18,6 +18,8 @@ class Settings:
             raise ValueError('Lease must be longer than a positive request timeout')
 
     def validate_url(self, url):
+        if any(ord(character) <= 32 for character in url):
+            raise ValueError('URL must not contain whitespace or control characters')
         parsed = urlsplit(url)
         if parsed.scheme not in {'http', 'https'} or not parsed.hostname:
             raise ValueError('An HTTP or HTTPS URL is required')
