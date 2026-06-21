@@ -25,11 +25,16 @@ def create_app(settings=None):
     app.state.store = store
 
     def authorize(authorization: str = Header(default='')):
-        if not secrets.compare_digest(authorization, 'Bearer ' + settings.api_key):
+        if not secrets.compare_digest(authorization.encode(), ('Bearer ' + settings.api_key).encode()):
             raise HTTPException(401, 'Invalid access token')
 
     @app.get('/health')
     def health():
+        try:
+            with store.connection() as db:
+                db.execute('SELECT id FROM events LIMIT 1').fetchone()
+        except Exception as error:
+            raise HTTPException(503, 'Storage is unavailable') from error
         return {'status': 'ok'}
 
     @app.post('/endpoints', dependencies=[Depends(authorize)], status_code=201)
@@ -59,7 +64,8 @@ def create_app(settings=None):
         result = store.event(event_id)
         if result is None:
             raise HTTPException(404, 'Event not found')
-        return result
+        return {key: value for key, value in result.items()
+                if key not in {'lease_token', 'lease_until'}}
 
     @app.post('/events/{event_id}/replay', dependencies=[Depends(authorize)])
     def replay(event_id: str):
