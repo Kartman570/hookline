@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment: &settings
+      HOOKLINE_API_KEY: ${HOOKLINE_API_KEY:?Set a local access key}
+      HOOKLINE_ALLOWED_HOSTS: ${HOOKLINE_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      HOOKLINE_DATABASE: /data/hookline.sqlite3
+    volumes:
+      - queue:/data
+  worker:
+    build: .
+    command: ["python", "-m", "hookline.worker"]
+    environment: *settings
+    volumes:
+      - queue:/data
+volumes:
+  queue:

@@ -13,4 +13,4 @@ def verify(secret, stamp, body, supplied, now, tolerance=300):
             return False
     except (TypeError, ValueError):
         return False
-    return hmac.compare_digest(signature(secret, stamp, body), supplied)
+    return hmac.compare_digest(signature(secret, stamp, body).encode(), supplied.encode())
